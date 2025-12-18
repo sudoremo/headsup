@@ -225,6 +225,7 @@ pub enum Category {
     TvShow,
     TvSeason,
     Movie,
+    Music,
     Software,
     Other,
 }
@@ -236,6 +237,7 @@ impl std::fmt::Display for Category {
             Category::TvShow => write!(f, "TV Show"),
             Category::TvSeason => write!(f, "TV Season"),
             Category::Movie => write!(f, "Movie"),
+            Category::Music => write!(f, "Music"),
             Category::Software => write!(f, "Software"),
             Category::Other => write!(f, "Other"),
         }

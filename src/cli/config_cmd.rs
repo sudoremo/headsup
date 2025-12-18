@@ -36,8 +36,10 @@ fn edit_config() -> Result<()> {
 
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
-    let status = Command::new(&editor)
-        .arg(&path)
+    // Use shell to handle complex editor commands like "/usr/bin/env nvim"
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{} \"{}\"", editor, path.display()))
         .status()
         .map_err(|e| HeadsupError::Config(format!("Failed to launch editor '{}': {}", editor, e)))?;
 

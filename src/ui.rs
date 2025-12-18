@@ -162,6 +162,7 @@ pub fn format_category(category: &crate::config::Category) -> String {
         crate::config::Category::TvShow => "TV Show".to_string(),
         crate::config::Category::TvSeason => "TV Season".to_string(),
         crate::config::Category::Movie => "Movie".to_string(),
+        crate::config::Category::Music => "Music".to_string(),
         crate::config::Category::Software => "Software".to_string(),
         crate::config::Category::Other => "Other".to_string(),
     }
@@ -188,7 +189,7 @@ pub fn parse_subject_type_option(option: &str) -> crate::config::SubjectType {
 
 /// Selection options for category
 pub fn category_options() -> Vec<&'static str> {
-    vec!["Game", "TV Show", "TV Season", "Movie", "Software", "Other"]
+    vec!["Game", "TV Show", "TV Season", "Movie", "Music", "Software", "Other"]
 }
 
 /// Parse selected category option to Category
@@ -198,6 +199,7 @@ pub fn parse_category_option(option: &str) -> crate::config::Category {
         "TV Show" => crate::config::Category::TvShow,
         "TV Season" => crate::config::Category::TvSeason,
         "Movie" => crate::config::Category::Movie,
+        "Music" => crate::config::Category::Music,
         "Software" => crate::config::Category::Software,
         "Other" => crate::config::Category::Other,
         _ => crate::config::Category::Other,

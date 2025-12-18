@@ -287,6 +287,25 @@ fn edit_subject(key: &str) -> Result<()> {
     let subject = config.find_subject_mut(key)
         .ok_or_else(|| HeadsupError::SubjectNotFound(key.to_string()))?;
 
+    // Edit key
+    let current_key = subject.key.clone();
+    let new_key = ui::prompt_text_with_default("Key:", &current_key)?;
+
+    // Validate new key if changed
+    if new_key != current_key {
+        // Check for conflicts (need to temporarily release the borrow)
+        let new_key_lower = new_key.to_lowercase();
+        let conflict = config.subjects.iter()
+            .any(|s| s.key.to_lowercase() == new_key_lower && s.key != current_key);
+        if conflict {
+            return Err(HeadsupError::SubjectKeyExists(new_key));
+        }
+    }
+
+    // Re-borrow after conflict check
+    let subject = config.find_subject_mut(key).unwrap();
+    subject.key = new_key;
+
     // Edit name
     let name = ui::prompt_text_with_default("Name:", &subject.name)?;
     subject.name = name;
