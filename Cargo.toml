@@ -1,0 +1,27 @@
+[package]
+name = "headsup"
+version = "0.1.0"
+edition = "2021"
+description = "A headless CLI tool that monitors subjects for release dates and answers using Claude"
+authors = ["rfritzsche"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+toml_edit = "0.22"
+lettre = { version = "0.11", features = ["tokio1-native-tls"] }
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+directories = "5"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+fs2 = "0.4"
+url = "2"
+inquire = "0.7"
+indicatif = "0.17"
+console = "0.15"
+atty = "0.2"
