@@ -101,7 +101,7 @@ pub async fn run_check(
     let notify_count = results.iter().filter(|r| r.notified).count();
 
     // Print summary
-    println!();
+    ui::print_blank();
     ui::print_info(&format!(
         "Checked {} subjects: {} succeeded, {} failed, {} notifications",
         results.len(),

@@ -18,6 +18,9 @@ async fn main() -> ExitCode {
     // Set up logging based on verbosity
     setup_logging(cli.verbose, cli.quiet, cli.log_format.as_deref());
 
+    // Set quiet mode for UI output
+    ui::set_quiet_mode(cli.quiet);
+
     // Run command
     let result = run_command(cli).await;
 

@@ -3,7 +3,21 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Confirm, Select, Text};
 use std::fmt::Display;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+/// Global quiet mode flag - when true, suppresses non-error output
+static QUIET_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Enable or disable quiet mode globally
+pub fn set_quiet_mode(quiet: bool) {
+    QUIET_MODE.store(quiet, Ordering::SeqCst);
+}
+
+/// Check if quiet mode is enabled
+pub fn is_quiet() -> bool {
+    QUIET_MODE.load(Ordering::SeqCst)
+}
 
 /// Prompt for text input
 pub fn prompt_text(message: &str) -> Result<String> {
@@ -126,24 +140,37 @@ where
     result
 }
 
-/// Print a success message
+/// Print a success message (suppressed in quiet mode)
 pub fn print_success(message: &str) {
-    println!("{} {}", style("✓").green(), message);
+    if !is_quiet() {
+        println!("{} {}", style("✓").green(), message);
+    }
 }
 
-/// Print an error message
+/// Print an error message (always shown, even in quiet mode)
 pub fn print_error(message: &str) {
     eprintln!("{} {}", style("✗").red(), message);
 }
 
-/// Print a warning message
+/// Print a warning message (suppressed in quiet mode)
 pub fn print_warning(message: &str) {
-    eprintln!("{} {}", style("!").yellow(), message);
+    if !is_quiet() {
+        eprintln!("{} {}", style("!").yellow(), message);
+    }
 }
 
-/// Print an info message
+/// Print an info message (suppressed in quiet mode)
 pub fn print_info(message: &str) {
-    println!("{} {}", style("→").blue(), message);
+    if !is_quiet() {
+        println!("{} {}", style("→").blue(), message);
+    }
+}
+
+/// Print a blank line (suppressed in quiet mode)
+pub fn print_blank() {
+    if !is_quiet() {
+        println!();
+    }
 }
 
 /// Format a subject type for display
