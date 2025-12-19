@@ -1,6 +1,6 @@
 # Headsup
 
-A headless CLI tool that monitors subjects (games, TV shows, software, events) for release dates and answers using Claude AI for intelligent web search and analysis.
+A CLI tool that monitors subjects (games, TV shows, software, events) for release dates and answers using Claude AI for intelligent web search and analysis.
 
 ## Features
 
