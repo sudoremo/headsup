@@ -19,7 +19,7 @@ A CLI tool that monitors subjects (games, TV shows, software, events) for releas
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/headsup.git
+git clone https://github.com/sudoremo/headsup.git
 cd headsup
 cargo build --release
 ```
