@@ -1,13 +1,15 @@
 use crate::claude::{self, ClaudeResponse, QuestionResponse, RecurringResponse, ReleaseResponse};
-use crate::config::{self, Config, Subject, SubjectType};
+use crate::config::{self, Backend, Config, Subject, SubjectType};
 use crate::email::{self, build_question_email, build_recurring_email, build_release_email, build_subject_disabled_email};
 use crate::error::{ExitStatus, HeadsupError, Result};
+use crate::perplexity;
 use crate::state::{
     self, Confidence, DatePrecision, HistoryEntry, PendingNotification, QuestionState,
     RecurringState, ReleaseState, ReleaseStatus, State, SubjectState,
 };
 use crate::ui;
 use chrono::Utc;
+use futures::future::join_all;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -30,10 +32,24 @@ pub async fn run_check(
     let config = config::load_config()?;
     let (mut state, lock) = state::load_state()?;
 
+    // Get backend-specific settings
+    let (total_run_timeout, max_searches, max_failures) = match config.backend {
+        Backend::Claude => (
+            config.claude.total_run_timeout_seconds,
+            config.claude.max_searches_per_run,
+            config.claude.max_consecutive_failures,
+        ),
+        Backend::Perplexity => (
+            config.perplexity.total_run_timeout_seconds,
+            config.perplexity.max_searches_per_run,
+            config.perplexity.max_consecutive_failures,
+        ),
+    };
+
     // Start time for total timeout
     let start = Instant::now();
-    let total_timeout = if config.claude.total_run_timeout_seconds > 0 {
-        Some(Duration::from_secs(config.claude.total_run_timeout_seconds))
+    let total_timeout = if total_run_timeout > 0 {
+        Some(Duration::from_secs(total_run_timeout))
     } else {
         None
     };
@@ -53,40 +69,95 @@ pub async fn run_check(
         return Ok(ExitStatus::Success);
     }
 
+    // Filter out subjects that have exceeded consecutive failures
+    let subjects_to_check: Vec<&Subject> = subjects_to_check
+        .into_iter()
+        .filter(|subject| {
+            if let Some(subject_state) = state.subjects.get(&subject.id) {
+                if subject_state.consecutive_failures() >= max_failures {
+                    ui::print_warning(&format!(
+                        "Skipping '{}' (max consecutive failures reached)",
+                        subject.name
+                    ));
+                    return false;
+                }
+            }
+            true
+        })
+        .take(max_searches as usize)
+        .collect();
+
+    if subjects_to_check.is_empty() {
+        ui::print_info("No subjects to check (all skipped)");
+        return Ok(ExitStatus::Success);
+    }
+
+    ui::print_info(&format!(
+        "Checking {} subjects in parallel using {} backend...",
+        subjects_to_check.len(),
+        match config.backend {
+            Backend::Claude => "Claude",
+            Backend::Perplexity => "Perplexity",
+        }
+    ));
+
+    // Clone data for parallel execution
+    let config_clone = config.clone();
+    let subjects_owned: Vec<Subject> = subjects_to_check.iter().map(|s| (*s).clone()).collect();
+    let state_snapshots: Vec<Option<SubjectState>> = subjects_owned
+        .iter()
+        .map(|s| state.subjects.get(&s.id).cloned())
+        .collect();
+
+    // Create futures for parallel execution
+    let futures: Vec<_> = subjects_owned
+        .into_iter()
+        .zip(state_snapshots.into_iter())
+        .map(|(subject, state_snapshot)| {
+            let cfg = config_clone.clone();
+            async move {
+                ui::print_info(&format!("  Starting '{}'...", subject.name));
+                let result = check_subject_parallel(&cfg, &subject, state_snapshot.as_ref()).await;
+                (subject, result)
+            }
+        })
+        .collect();
+
+    // Execute all checks in parallel with timeout
+    let parallel_results = if let Some(timeout) = total_timeout {
+        let remaining = timeout.saturating_sub(start.elapsed());
+        match tokio::time::timeout(remaining, join_all(futures)).await {
+            Ok(results) => results,
+            Err(_) => {
+                ui::print_warning("Total run timeout exceeded during parallel execution");
+                Vec::new()
+            }
+        }
+    } else {
+        join_all(futures).await
+    };
+
+    // Process results sequentially to update state
     let mut results: Vec<CheckResult> = Vec::new();
-    let mut search_count = 0;
-
-    for subject in subjects_to_check {
-        // Check total timeout
-        if let Some(timeout) = total_timeout {
-            if start.elapsed() > timeout {
-                ui::print_warning("Total run timeout exceeded");
-                break;
+    for (subject, check_result) in parallel_results {
+        match check_result {
+            Ok((response, should_notify)) => {
+                let result = process_successful_check(
+                    &config,
+                    &subject,
+                    response,
+                    should_notify,
+                    &mut state,
+                    dry_run,
+                    no_notify,
+                );
+                results.push(result);
+            }
+            Err(e) => {
+                let result = process_failed_check(&config, &subject, e, &mut state, dry_run, max_failures);
+                results.push(result);
             }
         }
-
-        // Check search limit
-        if search_count >= config.claude.max_searches_per_run {
-            ui::print_warning("Max searches per run reached");
-            break;
-        }
-
-        // Check consecutive failures
-        if let Some(subject_state) = state.subjects.get(&subject.id) {
-            if subject_state.consecutive_failures() >= config.claude.max_consecutive_failures {
-                ui::print_warning(&format!(
-                    "Skipping '{}' (max consecutive failures reached)",
-                    subject.name
-                ));
-                continue;
-            }
-        }
-
-        ui::print_info(&format!("Checking '{}'...", subject.name));
-        search_count += 1;
-
-        let result = check_single_subject(&config, subject, &mut state, dry_run, no_notify).await;
-        results.push(result);
     }
 
     // Update state
@@ -119,9 +190,33 @@ pub async fn run_check(
     }
 }
 
-async fn check_single_subject(
+/// Check a single subject using the configured backend (for parallel execution)
+async fn check_subject_parallel(
     config: &Config,
     subject: &Subject,
+    state: Option<&SubjectState>,
+) -> Result<(ClaudeResponse, bool)> {
+    let response = match config.backend {
+        Backend::Claude => claude::check_subject(&config.claude, subject, state).await?,
+        Backend::Perplexity => perplexity::check_subject(&config.perplexity, subject, state).await?,
+    };
+
+    let should_notify = match &response {
+        ClaudeResponse::Release(r) => r.should_notify,
+        ClaudeResponse::Question(r) => r.should_notify,
+        ClaudeResponse::Recurring(r) => r.should_notify,
+        ClaudeResponse::SubjectIdentification(_) => false,
+    };
+
+    Ok((response, should_notify))
+}
+
+/// Process a successful check result
+fn process_successful_check(
+    config: &Config,
+    subject: &Subject,
+    response: ClaudeResponse,
+    should_notify: bool,
     state: &mut State,
     dry_run: bool,
     no_notify: bool,
@@ -129,76 +224,83 @@ async fn check_single_subject(
     let mut result = CheckResult {
         subject_id: subject.id,
         subject_name: subject.name.clone(),
-        success: false,
+        success: true,
         notified: false,
         error: None,
     };
 
-    // Clone current state for Claude call (avoids borrow conflict)
-    let current_state_for_claude = state.subjects.get(&subject.id).cloned();
+    // Clone state for notification
+    let previous_state = state.subjects.get(&subject.id).cloned();
 
-    // Call Claude
-    match claude::check_subject(&config.claude, subject, current_state_for_claude.as_ref()).await {
-        Ok(response) => {
-            result.success = true;
+    // Process response based on type
+    let notify_flag = match &response {
+        ClaudeResponse::Release(r) => {
+            process_release_response(config, subject, r, state, dry_run)
+        }
+        ClaudeResponse::Question(r) => {
+            process_question_response(config, subject, r, state, dry_run)
+        }
+        ClaudeResponse::Recurring(r) => {
+            process_recurring_response(config, subject, r, state, dry_run)
+        }
+        ClaudeResponse::SubjectIdentification(_) => false,
+    };
 
-            // Clone state again before mutation for notification
-            let previous_state = state.subjects.get(&subject.id).cloned();
-
-            // Process response based on type
-            let should_notify = match &response {
-                ClaudeResponse::Release(r) => {
-                    process_release_response(config, subject, r, state, dry_run)
-                }
-                ClaudeResponse::Question(r) => {
-                    process_question_response(config, subject, r, state, dry_run)
-                }
-                ClaudeResponse::Recurring(r) => {
-                    process_recurring_response(config, subject, r, state, dry_run)
-                }
-                ClaudeResponse::SubjectIdentification(_) => false,
-            };
-
-            if should_notify && !no_notify && !dry_run {
-                // Send notification
-                match send_notification(config, subject, &response, previous_state.as_ref()) {
-                    Ok(()) => {
-                        result.notified = true;
-                        ui::print_success(&format!("  Notified about '{}'", subject.name));
-                    }
-                    Err(e) => {
-                        ui::print_error(&format!("  Failed to send notification: {}", e));
-                    }
-                }
-            } else if should_notify && no_notify && !dry_run {
-                // Add to pending notifications
-                add_pending_notification(subject, &response, state);
-                ui::print_info(&format!("  Added '{}' to pending notifications", subject.name));
-            } else if should_notify {
-                ui::print_info(&format!("  Would notify about '{}' (dry run)", subject.name));
+    if notify_flag && !no_notify && !dry_run {
+        match send_notification(config, subject, &response, previous_state.as_ref()) {
+            Ok(()) => {
+                result.notified = true;
+                ui::print_success(&format!("  Notified about '{}'", subject.name));
+            }
+            Err(e) => {
+                ui::print_error(&format!("  Failed to send notification: {}", e));
             }
         }
-        Err(e) => {
-            result.error = Some(e.to_string());
-            ui::print_error(&format!("  Error: {}", e));
+    } else if notify_flag && no_notify && !dry_run {
+        add_pending_notification(subject, &response, state);
+        ui::print_info(&format!("  Added '{}' to pending notifications", subject.name));
+    } else if notify_flag {
+        ui::print_info(&format!("  Would notify about '{}' (dry run)", subject.name));
+    } else {
+        ui::print_info(&format!("  '{}' - no changes", subject.name));
+    }
 
-            // Increment failure count
-            if !dry_run {
-                let failure_reason = match &e {
-                    HeadsupError::ClaudeTimeout(_) => "timeout",
-                    HeadsupError::ClaudeParseError(_) => "parse_error",
-                    _ => "claude_error",
-                };
+    result
+}
 
-                if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
-                    subject_state.increment_failure(failure_reason);
+/// Process a failed check result
+fn process_failed_check(
+    config: &Config,
+    subject: &Subject,
+    error: HeadsupError,
+    state: &mut State,
+    dry_run: bool,
+    max_failures: u32,
+) -> CheckResult {
+    let mut result = CheckResult {
+        subject_id: subject.id,
+        subject_name: subject.name.clone(),
+        success: false,
+        notified: false,
+        error: Some(error.to_string()),
+    };
 
-                    // Check if we should disable the subject
-                    if subject_state.consecutive_failures() >= config.claude.max_consecutive_failures {
-                        // Auto-disable subject and notify user
-                        disable_subject_and_notify(config, subject);
-                    }
-                }
+    ui::print_error(&format!("  '{}' error: {}", subject.name, error));
+
+    // Increment failure count
+    if !dry_run {
+        let failure_reason = match &error {
+            HeadsupError::ClaudeTimeout(_) | HeadsupError::PerplexityTimeout(_) => "timeout",
+            HeadsupError::ClaudeParseError(_) => "parse_error",
+            _ => "api_error",
+        };
+
+        if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
+            subject_state.increment_failure(failure_reason);
+
+            // Check if we should disable the subject
+            if subject_state.consecutive_failures() >= max_failures {
+                disable_subject_and_notify(config, subject);
             }
         }
     }

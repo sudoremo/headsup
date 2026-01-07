@@ -57,6 +57,12 @@ pub enum HeadsupError {
     #[error("Claude response parse error: {0}")]
     ClaudeParseError(String),
 
+    #[error("Perplexity error: {0}")]
+    Perplexity(String),
+
+    #[error("Perplexity timeout after {0} seconds")]
+    PerplexityTimeout(u64),
+
     #[error("Email error: {0}")]
     Email(String),
 
@@ -107,9 +113,13 @@ impl HeadsupError {
 
             HeadsupError::Email(_) | HeadsupError::SmtpConnection(_) => ExitStatus::EmailDeliveryFailed,
 
-            HeadsupError::ClaudeTimeout(_) | HeadsupError::TotalTimeout(_) => ExitStatus::Timeout,
+            HeadsupError::ClaudeTimeout(_)
+            | HeadsupError::PerplexityTimeout(_)
+            | HeadsupError::TotalTimeout(_) => ExitStatus::Timeout,
 
-            HeadsupError::Claude(_) | HeadsupError::ClaudeParseError(_) => ExitStatus::GeneralError,
+            HeadsupError::Claude(_)
+            | HeadsupError::ClaudeParseError(_)
+            | HeadsupError::Perplexity(_) => ExitStatus::GeneralError,
         }
     }
 }

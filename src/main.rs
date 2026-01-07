@@ -3,6 +3,7 @@ mod claude;
 mod config;
 mod email;
 mod error;
+mod perplexity;
 mod state;
 mod ui;
 

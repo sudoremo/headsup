@@ -4,7 +4,11 @@ use crate::state::{Confidence, DatePrecision, QuestionState, RecurringState, Rel
 /// Build the prompt for a release-type subject
 pub fn build_release_prompt(subject: &Subject, state: Option<&ReleaseState>) -> String {
     let category = subject.category.as_ref().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
-    let search_terms = subject.search_terms.join(", ");
+    let search_terms_section = if subject.search_terms.is_empty() {
+        String::new()
+    } else {
+        format!("SEARCH TERMS: {}\n", subject.search_terms.join(", "))
+    };
 
     let state_info = if let Some(s) = state {
         if let Some(ref date) = s.known_release_date {
@@ -27,8 +31,7 @@ pub fn build_release_prompt(subject: &Subject, state: Option<&ReleaseState>) -> 
 
 SUBJECT: {name}
 CATEGORY: {category}
-SEARCH TERMS: {search_terms}
-{notes_section}
+{search_terms_section}{notes_section}
 {state_info}
 
 TASK:
@@ -58,7 +61,7 @@ NOTIFICATION CRITERIA:
 Respond with ONLY the JSON object, no other text."#,
         name = subject.name,
         category = category,
-        search_terms = search_terms,
+        search_terms_section = search_terms_section,
         notes_section = notes_section,
         state_info = state_info
     )
@@ -67,7 +70,11 @@ Respond with ONLY the JSON object, no other text."#,
 /// Build the prompt for a question-type subject
 pub fn build_question_prompt(subject: &Subject, state: Option<&QuestionState>) -> String {
     let question = subject.question.as_ref().map(|q| q.as_str()).unwrap_or("Unknown question");
-    let search_terms = subject.search_terms.join(", ");
+    let search_terms_section = if subject.search_terms.is_empty() {
+        String::new()
+    } else {
+        format!("SEARCH TERMS: {}\n", subject.search_terms.join(", "))
+    };
 
     let state_info = if let Some(s) = state {
         if let Some(ref answer) = s.current_answer {
@@ -89,8 +96,7 @@ pub fn build_question_prompt(subject: &Subject, state: Option<&QuestionState>) -
     format!(r#"You are researching an answer to a tracked question.
 
 QUESTION: {question}
-SEARCH TERMS: {search_terms}
-{notes_section}
+{search_terms_section}{notes_section}
 {state_info}
 
 TASK:
@@ -119,7 +125,7 @@ NOTIFICATION CRITERIA:
 
 Respond with ONLY the JSON object, no other text."#,
         question = question,
-        search_terms = search_terms,
+        search_terms_section = search_terms_section,
         notes_section = notes_section,
         state_info = state_info
     )
@@ -128,7 +134,11 @@ Respond with ONLY the JSON object, no other text."#,
 /// Build the prompt for a recurring-type subject
 pub fn build_recurring_prompt(subject: &Subject, state: Option<&RecurringState>) -> String {
     let event_name = subject.event_name.as_ref().map(|e| e.as_str()).unwrap_or("Unknown event");
-    let search_terms = subject.search_terms.join(", ");
+    let search_terms_section = if subject.search_terms.is_empty() {
+        String::new()
+    } else {
+        format!("SEARCH TERMS: {}\n", subject.search_terms.join(", "))
+    };
 
     let state_info = if let Some(s) = state {
         let mut info = String::from("CURRENT KNOWN STATE:\n");
@@ -156,8 +166,7 @@ pub fn build_recurring_prompt(subject: &Subject, state: Option<&RecurringState>)
     format!(r#"You are researching the next occurrence of a recurring event.
 
 EVENT: {event_name}
-SEARCH TERMS: {search_terms}
-{notes_section}
+{search_terms_section}{notes_section}
 {state_info}
 
 TASK:
@@ -186,7 +195,7 @@ NOTIFICATION CRITERIA:
 
 Respond with ONLY the JSON object, no other text."#,
         event_name = event_name,
-        search_terms = search_terms,
+        search_terms_section = search_terms_section,
         notes_section = notes_section,
         state_info = state_info
     )

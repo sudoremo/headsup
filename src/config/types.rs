@@ -4,10 +4,23 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub email: EmailConfig,
+    #[serde(default)]
+    pub backend: Backend,
+    #[serde(default)]
     pub claude: ClaudeConfig,
+    #[serde(default)]
+    pub perplexity: PerplexityConfig,
     pub settings: Settings,
     #[serde(default)]
     pub subjects: Vec<Subject>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    Claude,
+    Perplexity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +47,7 @@ fn default_smtp_timeout() -> u64 {
     30
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClaudeConfig {
     #[serde(default = "default_claude_command")]
     pub command: String,
@@ -68,6 +81,27 @@ fn default_timeout() -> u64 {
 
 fn default_max_failures() -> u32 {
     3
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PerplexityConfig {
+    /// Command to execute to retrieve the Perplexity API key
+    #[serde(default)]
+    pub api_key_command: String,
+    #[serde(default = "default_perplexity_model")]
+    pub model: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+    #[serde(default = "default_max_failures")]
+    pub max_consecutive_failures: u32,
+    #[serde(default = "default_max_searches")]
+    pub max_searches_per_run: u32,
+    #[serde(default)]
+    pub total_run_timeout_seconds: u64,
+}
+
+fn default_perplexity_model() -> String {
+    "sonar".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,9 +225,7 @@ impl Subject {
             }
         }
 
-        if self.search_terms.is_empty() {
-            return Err("At least one search term is required".to_string());
-        }
+        // search_terms is now optional - Claude/Perplexity can determine queries from context
 
         Ok(())
     }
@@ -258,6 +290,7 @@ impl Config {
                 smtp_timeout_seconds: 30,
                 digest_mode: false,
             },
+            backend: Backend::Claude,
             claude: ClaudeConfig {
                 command: "claude".to_string(),
                 model: "sonnet".to_string(),
@@ -265,6 +298,14 @@ impl Config {
                 timeout_seconds: 60,
                 max_consecutive_failures: 3,
                 total_run_timeout_seconds: 600,
+            },
+            perplexity: PerplexityConfig {
+                api_key_command: String::new(),
+                model: "sonar".to_string(),
+                timeout_seconds: 30,
+                max_consecutive_failures: 3,
+                max_searches_per_run: 20,
+                total_run_timeout_seconds: 300,
             },
             settings: Settings {
                 log_level: LogLevel::Quiet,

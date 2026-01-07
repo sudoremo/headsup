@@ -215,17 +215,17 @@ async fn add_subject_manual(config: &mut Config) -> Result<()> {
         None
     };
 
-    // Get search terms
-    let search_terms_input = ui::prompt_text("Search terms (comma-separated):")?;
-    let search_terms: Vec<String> = search_terms_input
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if search_terms.is_empty() {
-        return Err(HeadsupError::Config("At least one search term is required".to_string()));
-    }
+    // Get search terms (optional - AI can determine queries from context)
+    let search_terms_input = ui::prompt_text("Search terms (comma-separated, or press Enter to let AI decide):")?;
+    let search_terms: Vec<String> = if search_terms_input.trim().is_empty() {
+        Vec::new()
+    } else {
+        search_terms_input
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
 
     // Optional notes
     let notes = ui::prompt_text_with_default("Notes (optional):", "")?;
@@ -310,14 +310,18 @@ fn edit_subject(key: &str) -> Result<()> {
     let name = ui::prompt_text_with_default("Name:", &subject.name)?;
     subject.name = name;
 
-    // Edit search terms
+    // Edit search terms (optional - AI can determine queries from context)
     let current_terms = subject.search_terms.join(", ");
-    let new_terms = ui::prompt_text_with_default("Search terms (comma-separated):", &current_terms)?;
-    subject.search_terms = new_terms
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let new_terms = ui::prompt_text_with_default("Search terms (comma-separated, or leave empty):", &current_terms)?;
+    subject.search_terms = if new_terms.trim().is_empty() {
+        Vec::new()
+    } else {
+        new_terms
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
 
     // Edit notes
     let current_notes = subject.notes.clone().unwrap_or_default();
