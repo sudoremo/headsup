@@ -1,6 +1,6 @@
 use crate::claude::{self, ClaudeResponse, QuestionResponse, RecurringResponse, ReleaseResponse};
 use crate::config::{self, Backend, Config, Subject, SubjectType};
-use crate::email::{self, build_question_email, build_recurring_email, build_release_email, build_subject_disabled_email};
+use crate::email::{self, build_question_email, build_recurring_email, build_release_email};
 use crate::error::{ExitStatus, HeadsupError, Result};
 use crate::perplexity;
 use crate::state::{
@@ -297,11 +297,6 @@ fn process_failed_check(
 
         if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
             subject_state.increment_failure(failure_reason);
-
-            // Check if we should disable the subject
-            if subject_state.consecutive_failures() >= max_failures {
-                disable_subject_and_notify(config, subject);
-            }
         }
     }
 
@@ -500,21 +495,3 @@ fn add_pending_notification(subject: &Subject, response: &ClaudeResponse, state:
     });
 }
 
-fn disable_subject_and_notify(config: &Config, subject: &Subject) {
-    // Try to disable the subject in config
-    if let Ok(mut cfg) = config::load_config() {
-        if let Some(s) = cfg.find_subject_mut(&subject.key) {
-            s.enabled = false;
-            let _ = config::save_config(&cfg);
-        }
-    }
-
-    // Send notification email
-    let content = build_subject_disabled_email(subject, config.claude.max_consecutive_failures);
-    let _ = email::send_email(&config.email, &content);
-
-    ui::print_warning(&format!(
-        "Subject '{}' auto-disabled after {} failures",
-        subject.name, config.claude.max_consecutive_failures
-    ));
-}
