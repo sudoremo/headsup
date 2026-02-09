@@ -69,7 +69,32 @@ pub async fn run_check(
         return Ok(ExitStatus::Success);
     }
 
-    // Filter out subjects that have exceeded consecutive failures
+    // Auto-reset failures if 24 hours have passed since last failure
+    let failure_cooldown = chrono::Duration::hours(24);
+    for subject in &subjects_to_check {
+        if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
+            if subject_state.consecutive_failures() >= max_failures {
+                if let Some(last_failure) = subject_state.last_failure_time() {
+                    if Utc::now() - last_failure > failure_cooldown {
+                        ui::print_info(&format!(
+                            "Auto-resetting '{}' after 24h cooldown",
+                            subject.name
+                        ));
+                        subject_state.reset_failures();
+                    }
+                } else {
+                    // No timestamp recorded (legacy state), reset to give it another chance
+                    ui::print_info(&format!(
+                        "Auto-resetting '{}' (no failure timestamp)",
+                        subject.name
+                    ));
+                    subject_state.reset_failures();
+                }
+            }
+        }
+    }
+
+    // Filter out subjects that have exceeded consecutive failures (and haven't been reset)
     let subjects_to_check: Vec<&Subject> = subjects_to_check
         .into_iter()
         .filter(|subject| {

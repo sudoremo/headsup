@@ -57,15 +57,26 @@ impl SubjectState {
             SubjectState::Release(s) => {
                 s.consecutive_failures += 1;
                 s.last_failure_reason = Some(reason.to_string());
+                s.last_failure_time = Some(Utc::now());
             }
             SubjectState::Question(s) => {
                 s.consecutive_failures += 1;
                 s.last_failure_reason = Some(reason.to_string());
+                s.last_failure_time = Some(Utc::now());
             }
             SubjectState::Recurring(s) => {
                 s.consecutive_failures += 1;
                 s.last_failure_reason = Some(reason.to_string());
+                s.last_failure_time = Some(Utc::now());
             }
+        }
+    }
+
+    pub fn last_failure_time(&self) -> Option<DateTime<Utc>> {
+        match self {
+            SubjectState::Release(s) => s.last_failure_time,
+            SubjectState::Question(s) => s.last_failure_time,
+            SubjectState::Recurring(s) => s.last_failure_time,
         }
     }
 
@@ -74,14 +85,17 @@ impl SubjectState {
             SubjectState::Release(s) => {
                 s.consecutive_failures = 0;
                 s.last_failure_reason = None;
+                s.last_failure_time = None;
             }
             SubjectState::Question(s) => {
                 s.consecutive_failures = 0;
                 s.last_failure_reason = None;
+                s.last_failure_time = None;
             }
             SubjectState::Recurring(s) => {
                 s.consecutive_failures = 0;
                 s.last_failure_reason = None;
+                s.last_failure_time = None;
             }
         }
     }
@@ -107,6 +121,8 @@ pub struct ReleaseState {
     pub consecutive_failures: u32,
     pub last_failure_reason: Option<String>,
     #[serde(default)]
+    pub last_failure_time: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
 
@@ -122,6 +138,7 @@ impl Default for ReleaseState {
             imminent_notified: false,
             consecutive_failures: 0,
             last_failure_reason: None,
+            last_failure_time: None,
             history: Vec::new(),
         }
     }
@@ -131,6 +148,7 @@ impl ReleaseState {
     pub fn reset_failures(&mut self) {
         self.consecutive_failures = 0;
         self.last_failure_reason = None;
+        self.last_failure_time = None;
     }
 }
 
@@ -143,6 +161,8 @@ pub struct QuestionState {
     pub last_notified: Option<DateTime<Utc>>,
     pub consecutive_failures: u32,
     pub last_failure_reason: Option<String>,
+    #[serde(default)]
+    pub last_failure_time: Option<DateTime<Utc>>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
@@ -157,6 +177,7 @@ impl Default for QuestionState {
             last_notified: None,
             consecutive_failures: 0,
             last_failure_reason: None,
+            last_failure_time: None,
             history: Vec::new(),
         }
     }
@@ -166,6 +187,7 @@ impl QuestionState {
     pub fn reset_failures(&mut self) {
         self.consecutive_failures = 0;
         self.last_failure_reason = None;
+        self.last_failure_time = None;
     }
 }
 
@@ -182,6 +204,8 @@ pub struct RecurringState {
     pub imminent_notified: bool,
     pub consecutive_failures: u32,
     pub last_failure_reason: Option<String>,
+    #[serde(default)]
+    pub last_failure_time: Option<DateTime<Utc>>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
@@ -200,6 +224,7 @@ impl Default for RecurringState {
             imminent_notified: false,
             consecutive_failures: 0,
             last_failure_reason: None,
+            last_failure_time: None,
             history: Vec::new(),
         }
     }
@@ -209,6 +234,7 @@ impl RecurringState {
     pub fn reset_failures(&mut self) {
         self.consecutive_failures = 0;
         self.last_failure_reason = None;
+        self.last_failure_time = None;
     }
 }
 
