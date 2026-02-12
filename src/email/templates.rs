@@ -263,32 +263,6 @@ If you're reading this, your email settings are configured properly!
     }
 }
 
-/// Build email for subject auto-disabled notification
-pub fn build_subject_disabled_email(subject: &Subject, failures: u32) -> EmailContent {
-    EmailContent {
-        subject: format!("[Headsup] Subject '{}' Disabled", subject.name),
-        body: format!(
-            r#"{separator}
-
-Subject Auto-Disabled
-
-The subject "{name}" has been automatically disabled after {failures} consecutive failures.
-
-To re-enable this subject, run:
-  headsup subjects enable {key}
-
-{separator}
-
-{footer}"#,
-            separator = SEPARATOR,
-            name = subject.name,
-            failures = failures,
-            key = subject.key,
-            footer = FOOTER
-        ),
-    }
-}
-
 fn determine_release_event_type(response: &ReleaseResponse, previous: Option<&ReleaseState>) -> &'static str {
     match previous {
         None => {

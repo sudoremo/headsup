@@ -57,8 +57,6 @@ pub struct ClaudeConfig {
     pub max_searches_per_run: u32,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
-    #[serde(default = "default_max_failures")]
-    pub max_consecutive_failures: u32,
     #[serde(default)]
     pub total_run_timeout_seconds: u64,
 }
@@ -79,10 +77,6 @@ fn default_timeout() -> u64 {
     60
 }
 
-fn default_max_failures() -> u32 {
-    3
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PerplexityConfig {
     /// Command to execute to retrieve the Perplexity API key
@@ -92,8 +86,6 @@ pub struct PerplexityConfig {
     pub model: String,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
-    #[serde(default = "default_max_failures")]
-    pub max_consecutive_failures: u32,
     #[serde(default = "default_max_searches")]
     pub max_searches_per_run: u32,
     #[serde(default)]
@@ -296,14 +288,12 @@ impl Config {
                 model: "sonnet".to_string(),
                 max_searches_per_run: 20,
                 timeout_seconds: 60,
-                max_consecutive_failures: 3,
                 total_run_timeout_seconds: 600,
             },
             perplexity: PerplexityConfig {
                 api_key_command: String::new(),
                 model: "sonar".to_string(),
                 timeout_seconds: 30,
-                max_consecutive_failures: 3,
                 max_searches_per_run: 20,
                 total_run_timeout_seconds: 300,
             },

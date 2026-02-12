@@ -33,16 +33,14 @@ pub async fn run_check(
     let (mut state, lock) = state::load_state()?;
 
     // Get backend-specific settings
-    let (total_run_timeout, max_searches, max_failures) = match config.backend {
+    let (total_run_timeout, max_searches) = match config.backend {
         Backend::Claude => (
             config.claude.total_run_timeout_seconds,
             config.claude.max_searches_per_run,
-            config.claude.max_consecutive_failures,
         ),
         Backend::Perplexity => (
             config.perplexity.total_run_timeout_seconds,
             config.perplexity.max_searches_per_run,
-            config.perplexity.max_consecutive_failures,
         ),
     };
 
@@ -69,53 +67,11 @@ pub async fn run_check(
         return Ok(ExitStatus::Success);
     }
 
-    // Auto-reset failures if 24 hours have passed since last failure
-    let failure_cooldown = chrono::Duration::hours(24);
-    for subject in &subjects_to_check {
-        if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
-            if subject_state.consecutive_failures() >= max_failures {
-                if let Some(last_failure) = subject_state.last_failure_time() {
-                    if Utc::now() - last_failure > failure_cooldown {
-                        ui::print_info(&format!(
-                            "Auto-resetting '{}' after 24h cooldown",
-                            subject.name
-                        ));
-                        subject_state.reset_failures();
-                    }
-                } else {
-                    // No timestamp recorded (legacy state), reset to give it another chance
-                    ui::print_info(&format!(
-                        "Auto-resetting '{}' (no failure timestamp)",
-                        subject.name
-                    ));
-                    subject_state.reset_failures();
-                }
-            }
-        }
-    }
-
-    // Filter out subjects that have exceeded consecutive failures (and haven't been reset)
+    // Limit to max searches per run
     let subjects_to_check: Vec<&Subject> = subjects_to_check
         .into_iter()
-        .filter(|subject| {
-            if let Some(subject_state) = state.subjects.get(&subject.id) {
-                if subject_state.consecutive_failures() >= max_failures {
-                    ui::print_warning(&format!(
-                        "Skipping '{}' (max consecutive failures reached)",
-                        subject.name
-                    ));
-                    return false;
-                }
-            }
-            true
-        })
         .take(max_searches as usize)
         .collect();
-
-    if subjects_to_check.is_empty() {
-        ui::print_info("No subjects to check (all skipped)");
-        return Ok(ExitStatus::Success);
-    }
 
     ui::print_info(&format!(
         "Checking {} subjects in parallel using {} backend...",
@@ -179,7 +135,7 @@ pub async fn run_check(
                 results.push(result);
             }
             Err(e) => {
-                let result = process_failed_check(&config, &subject, e, &mut state, dry_run, max_failures);
+                let result = process_failed_check(&config, &subject, e, &mut state, dry_run);
                 results.push(result);
             }
         }
@@ -295,37 +251,21 @@ fn process_successful_check(
 
 /// Process a failed check result
 fn process_failed_check(
-    config: &Config,
+    _config: &Config,
     subject: &Subject,
     error: HeadsupError,
-    state: &mut State,
-    dry_run: bool,
-    max_failures: u32,
+    _state: &mut State,
+    _dry_run: bool,
 ) -> CheckResult {
-    let mut result = CheckResult {
+    ui::print_error(&format!("  '{}' error: {}", subject.name, error));
+
+    CheckResult {
         subject_id: subject.id,
         subject_name: subject.name.clone(),
         success: false,
         notified: false,
         error: Some(error.to_string()),
-    };
-
-    ui::print_error(&format!("  '{}' error: {}", subject.name, error));
-
-    // Increment failure count
-    if !dry_run {
-        let failure_reason = match &error {
-            HeadsupError::ClaudeTimeout(_) | HeadsupError::PerplexityTimeout(_) => "timeout",
-            HeadsupError::ClaudeParseError(_) => "parse_error",
-            _ => "api_error",
-        };
-
-        if let Some(subject_state) = state.subjects.get_mut(&subject.id) {
-            subject_state.increment_failure(failure_reason);
-        }
     }
-
-    result
 }
 
 fn process_release_response(
@@ -345,7 +285,6 @@ fn process_release_response(
         release_state.release_date_precision = response.release_date_precision;
         release_state.confidence = response.confidence;
         release_state.status = response.status;
-        release_state.reset_failures();
 
         if should_notify {
             release_state.last_notified = Some(Utc::now());
@@ -386,7 +325,6 @@ fn process_question_response(
         question_state.current_answer = response.found_answer.clone();
         question_state.confidence = response.confidence;
         question_state.is_definitive = response.is_definitive;
-        question_state.reset_failures();
 
         if should_notify {
             question_state.last_notified = Some(Utc::now());
@@ -426,7 +364,6 @@ fn process_recurring_response(
         recurring_state.next_occurrence_name = response.next_occurrence_name.clone();
         recurring_state.date_precision = response.date_precision;
         recurring_state.confidence = response.confidence;
-        recurring_state.reset_failures();
 
         if should_notify {
             recurring_state.last_notified = Some(Utc::now());
