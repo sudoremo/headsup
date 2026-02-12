@@ -30,13 +30,22 @@ pub struct EmailConfig {
     pub smtp_host: String,
     #[serde(default = "default_smtp_port")]
     pub smtp_port: u16,
-    pub smtp_username: String,
+    /// Enable SMTP authentication (default: true)
+    #[serde(default = "default_smtp_auth")]
+    pub smtp_auth: bool,
+    #[serde(default)]
+    pub smtp_username: Option<String>,
     /// Command to execute to retrieve the SMTP password
-    pub smtp_password_command: String,
+    #[serde(default)]
+    pub smtp_password_command: Option<String>,
     #[serde(default = "default_smtp_timeout")]
     pub smtp_timeout_seconds: u64,
     #[serde(default)]
     pub digest_mode: bool,
+}
+
+fn default_smtp_auth() -> bool {
+    true
 }
 
 fn default_smtp_port() -> u16 {
@@ -277,8 +286,9 @@ impl Config {
                 from: format!("radar@{}", email.split('@').nth(1).unwrap_or("example.com")),
                 smtp_host: "smtp.example.com".to_string(),
                 smtp_port: 587,
-                smtp_username: "user".to_string(),
-                smtp_password_command: "echo 'your-password-here'".to_string(),
+                smtp_auth: true,
+                smtp_username: Some("user".to_string()),
+                smtp_password_command: Some("echo 'your-password-here'".to_string()),
                 smtp_timeout_seconds: 30,
                 digest_mode: false,
             },

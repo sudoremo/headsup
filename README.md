@@ -16,6 +16,12 @@ A CLI tool that monitors subjects (games, TV shows, software, events) for releas
 
 ## Installation
 
+### Prerequisites
+
+- [Rust and Cargo](https://www.rust-lang.org/tools/install)
+- [Claude CLI](https://github.com/anthropics/claude-code) installed and authenticated
+- SMTP server for email notifications
+
 ### From Source
 
 ```bash
@@ -25,11 +31,6 @@ cargo build --release
 ```
 
 The binary will be at `./target/release/headsup`.
-
-### Prerequisites
-
-- [Claude CLI](https://github.com/anthropics/claude-code) installed and authenticated
-- SMTP server for email notifications
 
 ## Quick Start
 
@@ -148,6 +149,7 @@ to = "your@email.com"
 from = "headsup@yourdomain.com"
 smtp_host = "smtp.example.com"
 smtp_port = 587
+smtp_auth = true  # set to false for unauthenticated SMTP (e.g., local relay)
 smtp_username = "user"
 smtp_password_command = "op read 'op://Private/SMTP/password'"
 smtp_timeout_seconds = 30
