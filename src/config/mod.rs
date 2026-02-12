@@ -133,7 +133,9 @@ pub fn create_default_config(email: &str) -> Result<()> {
 /// Redact sensitive information from config for display
 pub fn redact_config(config: &Config) -> Config {
     let mut redacted = config.clone();
-    redacted.email.smtp_password_command = "[REDACTED]".to_string();
+    if redacted.email.smtp_password_command.is_some() {
+        redacted.email.smtp_password_command = Some("[REDACTED]".to_string());
+    }
     redacted
 }
 
