@@ -1,32 +1,27 @@
 use crate::claude::{self, ClaudeResponse, QuestionResponse, RecurringResponse, ReleaseResponse};
-use crate::config::{self, Backend, Config, Subject, SubjectType};
+use crate::config::{self, Backend, Config, Subject};
 use crate::email::{self, build_question_email, build_recurring_email, build_release_email};
 use crate::error::{ExitStatus, HeadsupError, Result};
 use crate::perplexity;
 use crate::state::{
-    self, Confidence, DatePrecision, HistoryEntry, PendingNotification, QuestionState,
-    RecurringState, ReleaseState, ReleaseStatus, State, SubjectState,
+    self, DatePrecision, HistoryEntry, PendingNotification, State, SubjectState,
 };
 use crate::ui;
 use chrono::Utc;
 use futures::future::join_all;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 
 /// Result of checking a single subject
 pub struct CheckResult {
-    pub subject_id: Uuid,
-    pub subject_name: String,
     pub success: bool,
     pub notified: bool,
-    pub error: Option<String>,
 }
 
 /// Run the check command
 pub async fn run_check(
     subject_key: Option<String>,
     dry_run: bool,
-    force: bool,
+    _force: bool,
     no_notify: bool,
 ) -> Result<ExitStatus> {
     let config = config::load_config()?;
@@ -122,12 +117,11 @@ pub async fn run_check(
     let mut results: Vec<CheckResult> = Vec::new();
     for (subject, check_result) in parallel_results {
         match check_result {
-            Ok((response, should_notify)) => {
+            Ok((response, _)) => {
                 let result = process_successful_check(
                     &config,
                     &subject,
                     response,
-                    should_notify,
                     &mut state,
                     dry_run,
                     no_notify,
@@ -182,14 +176,7 @@ async fn check_subject_parallel(
         Backend::Perplexity => perplexity::check_subject(&config.perplexity, subject, state).await?,
     };
 
-    let should_notify = match &response {
-        ClaudeResponse::Release(r) => r.should_notify,
-        ClaudeResponse::Question(r) => r.should_notify,
-        ClaudeResponse::Recurring(r) => r.should_notify,
-        ClaudeResponse::SubjectIdentification(_) => false,
-    };
-
-    Ok((response, should_notify))
+    Ok((response, false))
 }
 
 /// Process a successful check result
@@ -197,17 +184,13 @@ fn process_successful_check(
     config: &Config,
     subject: &Subject,
     response: ClaudeResponse,
-    should_notify: bool,
     state: &mut State,
     dry_run: bool,
     no_notify: bool,
 ) -> CheckResult {
     let mut result = CheckResult {
-        subject_id: subject.id,
-        subject_name: subject.name.clone(),
         success: true,
         notified: false,
-        error: None,
     };
 
     // Clone state for notification
@@ -224,22 +207,24 @@ fn process_successful_check(
         ClaudeResponse::Recurring(r) => {
             process_recurring_response(config, subject, r, state, dry_run)
         }
-        ClaudeResponse::SubjectIdentification(_) => false,
     };
 
-    if notify_flag && !no_notify && !dry_run {
-        match send_notification(config, subject, &response, previous_state.as_ref()) {
-            Ok(()) => {
-                result.notified = true;
-                ui::print_success(&format!("  Notified about '{}'", subject.name));
-            }
-            Err(e) => {
-                ui::print_error(&format!("  Failed to send notification: {}", e));
+    if notify_flag && !dry_run {
+        if no_notify || config.email.digest_mode {
+            add_pending_notification(subject, &response, state);
+            let reason = if config.email.digest_mode { "digest mode" } else { "no-notify" };
+            ui::print_info(&format!("  Queued '{}' for pending notifications ({})", subject.name, reason));
+        } else {
+            match send_notification(config, subject, &response, previous_state.as_ref()) {
+                Ok(()) => {
+                    result.notified = true;
+                    ui::print_success(&format!("  Notified about '{}'", subject.name));
+                }
+                Err(e) => {
+                    ui::print_error(&format!("  Failed to send notification: {}", e));
+                }
             }
         }
-    } else if notify_flag && no_notify && !dry_run {
-        add_pending_notification(subject, &response, state);
-        ui::print_info(&format!("  Added '{}' to pending notifications", subject.name));
     } else if notify_flag {
         ui::print_info(&format!("  Would notify about '{}' (dry run)", subject.name));
     } else {
@@ -260,11 +245,8 @@ fn process_failed_check(
     ui::print_error(&format!("  '{}' error: {}", subject.name, error));
 
     CheckResult {
-        subject_id: subject.id,
-        subject_name: subject.name.clone(),
         success: false,
         notified: false,
-        error: Some(error.to_string()),
     }
 }
 
@@ -279,18 +261,29 @@ fn process_release_response(
     let should_notify = response.should_notify;
 
     if !dry_run {
-        // Update state
+        // Always update last_checked
         release_state.last_checked = Some(Utc::now());
-        release_state.known_release_date = response.found_release_date.clone();
-        release_state.release_date_precision = response.release_date_precision;
-        release_state.confidence = response.confidence;
-        release_state.status = response.status;
 
+        // Only update core fields when notifying (prevents drift from LLM rewording)
         if should_notify {
+            release_state.known_release_date = response.found_release_date.clone();
+            release_state.release_date_precision = response.release_date_precision;
+            release_state.confidence = response.confidence;
+            release_state.status = response.status;
             release_state.last_notified = Some(Utc::now());
+            release_state.last_notified_summary = Some(response.summary.clone());
+            release_state.last_notified_value = response.found_release_date.clone();
+
+            // ICS tracking: generate UID if not set, increment sequence on date change
+            if response.release_date_precision == DatePrecision::Exact {
+                if release_state.ics_uid.is_none() {
+                    release_state.ics_uid = Some(format!("headsup-{}@headsup", subject.id));
+                }
+                release_state.ics_sequence += 1;
+            }
         }
 
-        // Add history entry
+        // Always write history for auditing
         let entry = HistoryEntry {
             timestamp: Utc::now(),
             event: "check".to_string(),
@@ -321,15 +314,20 @@ fn process_question_response(
     let should_notify = response.should_notify;
 
     if !dry_run {
+        // Always update last_checked
         question_state.last_checked = Some(Utc::now());
-        question_state.current_answer = response.found_answer.clone();
-        question_state.confidence = response.confidence;
-        question_state.is_definitive = response.is_definitive;
 
+        // Only update core fields when notifying (prevents drift from LLM rewording)
         if should_notify {
+            question_state.current_answer = response.found_answer.clone();
+            question_state.confidence = response.confidence;
+            question_state.is_definitive = response.is_definitive;
             question_state.last_notified = Some(Utc::now());
+            question_state.last_notified_summary = Some(response.summary.clone());
+            question_state.last_notified_value = response.found_answer.clone();
         }
 
+        // Always write history for auditing
         let entry = HistoryEntry {
             timestamp: Utc::now(),
             event: "check".to_string(),
@@ -359,16 +357,29 @@ fn process_recurring_response(
     let should_notify = response.should_notify;
 
     if !dry_run {
+        // Always update last_checked
         recurring_state.last_checked = Some(Utc::now());
-        recurring_state.next_occurrence_date = response.next_occurrence_date.clone();
-        recurring_state.next_occurrence_name = response.next_occurrence_name.clone();
-        recurring_state.date_precision = response.date_precision;
-        recurring_state.confidence = response.confidence;
 
+        // Only update core fields when notifying (prevents drift from LLM rewording)
         if should_notify {
+            recurring_state.next_occurrence_date = response.next_occurrence_date.clone();
+            recurring_state.next_occurrence_name = response.next_occurrence_name.clone();
+            recurring_state.date_precision = response.date_precision;
+            recurring_state.confidence = response.confidence;
             recurring_state.last_notified = Some(Utc::now());
+            recurring_state.last_notified_summary = Some(response.summary.clone());
+            recurring_state.last_notified_value = response.next_occurrence_date.clone();
+
+            // ICS tracking: generate UID if not set, increment sequence on date change
+            if response.date_precision == DatePrecision::Exact {
+                if recurring_state.ics_uid.is_none() {
+                    recurring_state.ics_uid = Some(format!("headsup-{}@headsup", subject.id));
+                }
+                recurring_state.ics_sequence += 1;
+            }
         }
 
+        // Always write history for auditing
         let entry = HistoryEntry {
             timestamp: Utc::now(),
             event: "check".to_string(),
@@ -416,9 +427,6 @@ fn send_notification(
             });
             build_recurring_email(subject, r, prev)
         }
-        ClaudeResponse::SubjectIdentification(_) => {
-            return Ok(()); // Should never happen
-        }
     };
 
     email::send_email(&config.email, &content)
@@ -444,7 +452,6 @@ fn add_pending_notification(subject: &Subject, response: &ClaudeResponse, state:
             r.source_url.clone(),
             serde_json::to_value(r).unwrap_or_default(),
         ),
-        ClaudeResponse::SubjectIdentification(_) => return,
     };
 
     state.add_pending_notification(PendingNotification {

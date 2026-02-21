@@ -1,5 +1,21 @@
-use crate::config::{Category, Subject, SubjectType};
-use crate::state::{Confidence, DatePrecision, QuestionState, RecurringState, ReleaseState};
+use crate::config::Subject;
+use crate::state::{QuestionState, RecurringState, ReleaseState};
+use chrono::{DateTime, Utc};
+
+/// Format a datetime as a human-readable relative time string
+fn relative_time(dt: &DateTime<Utc>) -> String {
+    let duration = Utc::now().signed_duration_since(*dt);
+    let hours = duration.num_hours();
+    if hours < 1 {
+        let mins = duration.num_minutes();
+        if mins <= 1 { "just now".to_string() } else { format!("{} minutes ago", mins) }
+    } else if hours < 24 {
+        if hours == 1 { "1 hour ago".to_string() } else { format!("{} hours ago", hours) }
+    } else {
+        let days = duration.num_days();
+        if days == 1 { "1 day ago".to_string() } else { format!("{} days ago", days) }
+    }
+}
 
 /// Build the prompt for a release-type subject
 pub fn build_release_prompt(subject: &Subject, state: Option<&ReleaseState>) -> String {
@@ -27,13 +43,31 @@ pub fn build_release_prompt(subject: &Subject, state: Option<&ReleaseState>) -> 
         .map(|n| format!("CONTEXT: {}\n", n))
         .unwrap_or_default();
 
+    let last_notification_section = if let Some(s) = state {
+        if let (Some(ref summary), Some(ref notified_at)) = (&s.last_notified_summary, &s.last_notified) {
+            let value_info = s.last_notified_value.as_ref()
+                .map(|v| format!("- Value communicated: {}\n", v))
+                .unwrap_or_default();
+            format!(
+                "LAST NOTIFICATION SENT ({ago}):\n- Summary: {summary}\n{value_info}",
+                ago = relative_time(notified_at),
+                summary = summary,
+                value_info = value_info,
+            )
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     format!(r#"You are analyzing release date information for a tracked subject.
 
 SUBJECT: {name}
 CATEGORY: {category}
 {search_terms_section}{notes_section}
 {state_info}
-
+{last_notification_section}
 TASK:
 1. Search for recent news about this subject's release date
 2. Evaluate the credibility of sources (official > major outlets > rumors)
@@ -58,12 +92,21 @@ NOTIFICATION CRITERIA:
 - Notify if: new release date announced, date changed, release imminent (within 7 days), or release happened
 - Do NOT notify if: only rumors with no credible source, information unchanged, already notified for this event
 
+IMPORTANT: Only set should_notify=true for MEANINGFUL FACTUAL changes compared
+to what was last communicated (see LAST NOTIFICATION SENT). Different wording
+of the same facts is NOT a change. Examples:
+  - CHANGE: "Q3 2025" -> "September 15, 2025" (date refined)
+  - CHANGE: "2025" -> "Cancelled" (status changed)
+  - NOT a change: "Expected Q3" -> "Targeting Q3" (same info, different words)
+  - NOT a change: "Coming in fall" -> "Arriving in autumn" (same timeframe)
+
 Respond with ONLY the JSON object, no other text."#,
         name = subject.name,
         category = category,
         search_terms_section = search_terms_section,
         notes_section = notes_section,
-        state_info = state_info
+        state_info = state_info,
+        last_notification_section = last_notification_section,
     )
 }
 
@@ -93,12 +136,30 @@ pub fn build_question_prompt(subject: &Subject, state: Option<&QuestionState>) -
         .map(|n| format!("CONTEXT: {}\n", n))
         .unwrap_or_default();
 
+    let last_notification_section = if let Some(s) = state {
+        if let (Some(ref summary), Some(ref notified_at)) = (&s.last_notified_summary, &s.last_notified) {
+            let value_info = s.last_notified_value.as_ref()
+                .map(|v| format!("- Value communicated: {}\n", v))
+                .unwrap_or_default();
+            format!(
+                "LAST NOTIFICATION SENT ({ago}):\n- Summary: {summary}\n{value_info}",
+                ago = relative_time(notified_at),
+                summary = summary,
+                value_info = value_info,
+            )
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     format!(r#"You are researching an answer to a tracked question.
 
 QUESTION: {question}
 {search_terms_section}{notes_section}
 {state_info}
-
+{last_notification_section}
 TASK:
 1. Search for recent information about this question
 2. Evaluate the credibility of sources
@@ -123,11 +184,20 @@ NOTIFICATION CRITERIA:
 - Notify if: new answer found, answer changed, confidence upgraded to official/reliable, answer confirmed as definitive
 - Do NOT notify if: only speculation, same answer with same confidence, already notified for this
 
+IMPORTANT: Only set should_notify=true for MEANINGFUL FACTUAL changes compared
+to what was last communicated (see LAST NOTIFICATION SENT). Different wording
+of the same facts is NOT a change. Examples:
+  - CHANGE: "Yes, confirmed for $499" -> "Yes, confirmed for $599" (price changed)
+  - CHANGE: "No official answer" -> "Yes, officially confirmed" (new answer)
+  - NOT a change: "Expected to be $499" -> "Likely around $499" (same info, different words)
+  - NOT a change: "No update yet" -> "Still no official word" (same lack of answer)
+
 Respond with ONLY the JSON object, no other text."#,
         question = question,
         search_terms_section = search_terms_section,
         notes_section = notes_section,
-        state_info = state_info
+        state_info = state_info,
+        last_notification_section = last_notification_section,
     )
 }
 
@@ -163,12 +233,30 @@ pub fn build_recurring_prompt(subject: &Subject, state: Option<&RecurringState>)
         .map(|n| format!("CONTEXT: {}\n", n))
         .unwrap_or_default();
 
+    let last_notification_section = if let Some(s) = state {
+        if let (Some(ref summary), Some(ref notified_at)) = (&s.last_notified_summary, &s.last_notified) {
+            let value_info = s.last_notified_value.as_ref()
+                .map(|v| format!("- Value communicated: {}\n", v))
+                .unwrap_or_default();
+            format!(
+                "LAST NOTIFICATION SENT ({ago}):\n- Summary: {summary}\n{value_info}",
+                ago = relative_time(notified_at),
+                summary = summary,
+                value_info = value_info,
+            )
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     format!(r#"You are researching the next occurrence of a recurring event.
 
 EVENT: {event_name}
 {search_terms_section}{notes_section}
 {state_info}
-
+{last_notification_section}
 TASK:
 1. Search for information about the next upcoming occurrence of this event
 2. Evaluate the credibility of sources
@@ -193,11 +281,20 @@ NOTIFICATION CRITERIA:
 - Notify if: next event date found, date changed, event imminent (within 7 days)
 - Do NOT notify if: same date and event name, only speculation, already notified for this
 
+IMPORTANT: Only set should_notify=true for MEANINGFUL FACTUAL changes compared
+to what was last communicated (see LAST NOTIFICATION SENT). Different wording
+of the same facts is NOT a change. Examples:
+  - CHANGE: "June 2025" -> "June 9-13, 2025" (date refined)
+  - CHANGE: "WWDC 2025" -> "WWDC 2025 cancelled" (status changed)
+  - NOT a change: "Expected June" -> "Anticipated in June" (same info, different words)
+  - NOT a change: "WWDC 25" -> "Apple WWDC 2025" (same event, different naming)
+
 Respond with ONLY the JSON object, no other text."#,
         event_name = event_name,
         search_terms_section = search_terms_section,
         notes_section = notes_section,
-        state_info = state_info
+        state_info = state_info,
+        last_notification_section = last_notification_section,
     )
 }
 

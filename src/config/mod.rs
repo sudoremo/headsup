@@ -74,18 +74,6 @@ pub fn save_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Save config to a specific path
-pub fn save_config_to(config: &Config, path: &PathBuf) -> Result<()> {
-    // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let content = toml::to_string_pretty(config)?;
-    fs::write(path, content)?;
-    Ok(())
-}
-
 /// Execute the password command and return the password
 pub fn get_smtp_password(command: &str) -> Result<String> {
     let output = if cfg!(target_os = "windows") {
@@ -122,12 +110,6 @@ pub fn get_smtp_password(command: &str) -> Result<String> {
             e
         ))),
     }
-}
-
-/// Create default config with placeholder values
-pub fn create_default_config(email: &str) -> Result<()> {
-    let config = Config::default_with_email(email);
-    save_config(&config)
 }
 
 /// Redact sensitive information from config for display

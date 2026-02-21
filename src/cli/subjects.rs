@@ -1,6 +1,6 @@
 use crate::cli::SubjectsCommands;
 use crate::claude;
-use crate::config::{self, Category, Config, Subject, SubjectType};
+use crate::config::{self, Config, Subject, SubjectType};
 use crate::error::{HeadsupError, Result};
 use crate::state;
 use crate::ui;

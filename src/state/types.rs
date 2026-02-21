@@ -43,14 +43,6 @@ impl SubjectState {
             SubjectState::Recurring(s) => s.last_checked,
         }
     }
-
-    pub fn set_last_checked(&mut self, time: DateTime<Utc>) {
-        match self {
-            SubjectState::Release(s) => s.last_checked = Some(time),
-            SubjectState::Question(s) => s.last_checked = Some(time),
-            SubjectState::Recurring(s) => s.last_checked = Some(time),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,12 +54,14 @@ pub struct ReleaseState {
     pub status: ReleaseStatus,
     pub last_notified: Option<DateTime<Utc>>,
     pub imminent_notified: bool,
-    #[serde(skip_serializing, default)]
-    pub consecutive_failures: u32,
-    #[serde(skip_serializing, default)]
-    pub last_failure_reason: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub last_failure_time: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_notified_summary: Option<String>,
+    #[serde(default)]
+    pub last_notified_value: Option<String>,
+    #[serde(default)]
+    pub ics_uid: Option<String>,
+    #[serde(default)]
+    pub ics_sequence: u32,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
@@ -82,9 +76,10 @@ impl Default for ReleaseState {
             status: ReleaseStatus::Unknown,
             last_notified: None,
             imminent_notified: false,
-            consecutive_failures: 0,
-            last_failure_reason: None,
-            last_failure_time: None,
+            last_notified_summary: None,
+            last_notified_value: None,
+            ics_uid: None,
+            ics_sequence: 0,
             history: Vec::new(),
         }
     }
@@ -97,12 +92,10 @@ pub struct QuestionState {
     pub confidence: Confidence,
     pub is_definitive: bool,
     pub last_notified: Option<DateTime<Utc>>,
-    #[serde(skip_serializing, default)]
-    pub consecutive_failures: u32,
-    #[serde(skip_serializing, default)]
-    pub last_failure_reason: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub last_failure_time: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_notified_summary: Option<String>,
+    #[serde(default)]
+    pub last_notified_value: Option<String>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
@@ -115,9 +108,8 @@ impl Default for QuestionState {
             confidence: Confidence::Unknown,
             is_definitive: false,
             last_notified: None,
-            consecutive_failures: 0,
-            last_failure_reason: None,
-            last_failure_time: None,
+            last_notified_summary: None,
+            last_notified_value: None,
             history: Vec::new(),
         }
     }
@@ -134,12 +126,14 @@ pub struct RecurringState {
     pub occurrence_count: u32,
     pub last_notified: Option<DateTime<Utc>>,
     pub imminent_notified: bool,
-    #[serde(skip_serializing, default)]
-    pub consecutive_failures: u32,
-    #[serde(skip_serializing, default)]
-    pub last_failure_reason: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub last_failure_time: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_notified_summary: Option<String>,
+    #[serde(default)]
+    pub last_notified_value: Option<String>,
+    #[serde(default)]
+    pub ics_uid: Option<String>,
+    #[serde(default)]
+    pub ics_sequence: u32,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
 }
@@ -156,9 +150,10 @@ impl Default for RecurringState {
             occurrence_count: 0,
             last_notified: None,
             imminent_notified: false,
-            consecutive_failures: 0,
-            last_failure_reason: None,
-            last_failure_time: None,
+            last_notified_summary: None,
+            last_notified_value: None,
+            ics_uid: None,
+            ics_sequence: 0,
             history: Vec::new(),
         }
     }

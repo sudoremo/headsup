@@ -5,12 +5,11 @@ pub use process::execute_perplexity;
 use crate::config::{PerplexityConfig, Subject, SubjectType};
 use crate::claude::{
     build_release_prompt, build_question_prompt, build_recurring_prompt,
-    build_subject_identification_prompt, parse_release_response, parse_question_response,
-    parse_recurring_response, parse_subject_identification_response,
-    ClaudeResponse, SubjectIdentificationResponse,
+    parse_release_response, parse_question_response, parse_recurring_response,
+    ClaudeResponse,
 };
 use crate::error::Result;
-use crate::state::{QuestionState, RecurringState, ReleaseState, SubjectState};
+use crate::state::SubjectState;
 
 /// Check a subject using Perplexity API and return the response
 pub async fn check_subject(
@@ -50,14 +49,4 @@ pub async fn check_subject(
             Ok(ClaudeResponse::Recurring(response))
         }
     }
-}
-
-/// Identify subjects based on user input using Perplexity
-pub async fn identify_subjects(
-    config: &PerplexityConfig,
-    user_input: &str,
-) -> Result<SubjectIdentificationResponse> {
-    let prompt = build_subject_identification_prompt(user_input);
-    let raw = execute_perplexity(config, &prompt).await?;
-    parse_subject_identification_response(&raw)
 }

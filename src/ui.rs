@@ -49,19 +49,6 @@ pub fn prompt_select<T: Display>(message: &str, options: Vec<T>) -> Result<T> {
         .map_err(|_| HeadsupError::UserCancelled)
 }
 
-/// Prompt for selection from a list, returning the index
-pub fn prompt_select_index<T: Display>(message: &str, options: &[T]) -> Result<usize> {
-    let options_vec: Vec<String> = options.iter().map(|o| o.to_string()).collect();
-    let selected = Select::new(message, options_vec)
-        .prompt()
-        .map_err(|_| HeadsupError::UserCancelled)?;
-
-    // Find the index of the selected option
-    options.iter()
-        .position(|o| o.to_string() == selected)
-        .ok_or_else(|| HeadsupError::UserCancelled)
-}
-
 /// Create a spinner with a message
 pub struct Spinner {
     progress: ProgressBar,
@@ -82,16 +69,6 @@ impl Spinner {
         Spinner { progress }
     }
 
-    /// Update the spinner message
-    pub fn set_message(&self, message: &str) {
-        self.progress.set_message(message.to_string());
-    }
-
-    /// Stop the spinner with a success message
-    pub fn finish_with_message(&self, message: &str) {
-        self.progress.finish_with_message(format!("{} {}", style("✓").green(), message));
-    }
-
     /// Stop the spinner with an error message
     pub fn finish_with_error(&self, message: &str) {
         self.progress.finish_with_message(format!("{} {}", style("✗").red(), message));
@@ -109,35 +86,6 @@ impl Drop for Spinner {
             self.progress.finish_and_clear();
         }
     }
-}
-
-/// Execute a function while showing a spinner
-pub fn with_spinner<F, T>(message: &str, f: F) -> Result<T>
-where
-    F: FnOnce() -> Result<T>,
-{
-    let spinner = Spinner::new(message);
-    let result = f();
-    match &result {
-        Ok(_) => spinner.finish_and_clear(),
-        Err(e) => spinner.finish_with_error(&e.to_string()),
-    }
-    result
-}
-
-/// Execute an async function while showing a spinner
-pub async fn with_spinner_async<F, T, Fut>(message: &str, f: F) -> Result<T>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
-{
-    let spinner = Spinner::new(message);
-    let result = f().await;
-    match &result {
-        Ok(_) => spinner.finish_and_clear(),
-        Err(e) => spinner.finish_with_error(&e.to_string()),
-    }
-    result
 }
 
 /// Print a success message (suppressed in quiet mode)
@@ -170,28 +118,6 @@ pub fn print_info(message: &str) {
 pub fn print_blank() {
     if !is_quiet() {
         println!();
-    }
-}
-
-/// Format a subject type for display
-pub fn format_subject_type(subject_type: &crate::config::SubjectType) -> String {
-    match subject_type {
-        crate::config::SubjectType::Release => "Release date (one-time)".to_string(),
-        crate::config::SubjectType::Question => "General question".to_string(),
-        crate::config::SubjectType::Recurring => "Recurring event".to_string(),
-    }
-}
-
-/// Format a category for display
-pub fn format_category(category: &crate::config::Category) -> String {
-    match category {
-        crate::config::Category::Game => "Game".to_string(),
-        crate::config::Category::TvShow => "TV Show".to_string(),
-        crate::config::Category::TvSeason => "TV Season".to_string(),
-        crate::config::Category::Movie => "Movie".to_string(),
-        crate::config::Category::Music => "Music".to_string(),
-        crate::config::Category::Software => "Software".to_string(),
-        crate::config::Category::Other => "Other".to_string(),
     }
 }
 

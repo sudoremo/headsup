@@ -7,7 +7,6 @@ pub use types::*;
 use crate::config;
 use crate::error::Result;
 use std::fs;
-use std::path::PathBuf;
 use std::time::Duration;
 
 /// Default lock timeout in seconds
@@ -20,20 +19,6 @@ pub fn load_state() -> Result<(State, FileLock)> {
 
     let state = if path.exists() {
         let content = fs::read_to_string(&path)?;
-        serde_json::from_str(&content)?
-    } else {
-        State::default()
-    };
-
-    Ok((state, lock))
-}
-
-/// Load state from a specific path (with locking)
-pub fn load_state_from(path: &PathBuf) -> Result<(State, FileLock)> {
-    let lock = FileLock::acquire(path, Duration::from_secs(LOCK_TIMEOUT_SECS))?;
-
-    let state = if path.exists() {
-        let content = fs::read_to_string(path)?;
         serde_json::from_str(&content)?
     } else {
         State::default()
@@ -68,22 +53,31 @@ pub fn save_state(state: &State, _lock: &FileLock) -> Result<()> {
     Ok(())
 }
 
-/// Save state to a specific path (lock must be held)
-pub fn save_state_to(state: &State, path: &PathBuf, _lock: &FileLock) -> Result<()> {
-    // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let content = serde_json::to_string_pretty(state)?;
-    fs::write(path, content)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use tempfile::tempdir;
+
+    fn save_state_to(state: &State, path: &PathBuf, _lock: &FileLock) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let content = serde_json::to_string_pretty(state)?;
+        fs::write(path, content)?;
+        Ok(())
+    }
+
+    fn load_state_from(path: &PathBuf) -> Result<(State, FileLock)> {
+        let lock = FileLock::acquire(path, Duration::from_secs(LOCK_TIMEOUT_SECS))?;
+        let state = if path.exists() {
+            let content = fs::read_to_string(path)?;
+            serde_json::from_str(&content)?
+        } else {
+            State::default()
+        };
+        Ok((state, lock))
+    }
 
     #[test]
     fn test_state_roundtrip() {

@@ -70,7 +70,6 @@ pub enum ClaudeResponse {
     Release(ReleaseResponse),
     Question(QuestionResponse),
     Recurring(RecurringResponse),
-    SubjectIdentification(SubjectIdentificationResponse),
 }
 
 /// Parse a release response from Claude's raw output
@@ -144,25 +143,13 @@ fn extract_json(raw: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-/// Validate a URL (http or https)
-pub fn validate_url(url: &str) -> bool {
-    url.starts_with("http://") || url.starts_with("https://")
-}
-
-/// Sanitize a URL for email inclusion
-pub fn sanitize_url(url: Option<&str>) -> Option<String> {
-    url.and_then(|u| {
-        if validate_url(u) {
-            Some(u.to_string())
-        } else {
-            None
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn validate_url(url: &str) -> bool {
+        url.starts_with("http://") || url.starts_with("https://")
+    }
 
     #[test]
     fn test_extract_json_plain() {

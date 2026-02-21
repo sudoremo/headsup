@@ -1,7 +1,7 @@
 use crate::cli::StateCommands;
 use crate::config;
 use crate::error::{HeadsupError, Result};
-use crate::state::{self, State};
+use crate::state;
 use crate::ui;
 
 /// Run state subcommands

@@ -9,8 +9,10 @@ A CLI tool that monitors subjects (games, TV shows, software, events) for releas
   - `release` - Track release dates for games, movies, TV shows, software
   - `question` - Track answers to questions (e.g., "Who is the next James Bond?")
   - `recurring` - Track recurring events (e.g., Apple keynotes, E3)
-- **Smart Notifications**: Only notifies when there's actual news (date announced, changed, confirmed)
+- **Smart Change Detection**: Only notifies on meaningful factual changes, not LLM rewording. Tracks last-notified state to prevent spurious notifications
 - **Email Delivery**: SMTP-based notifications with optional digest mode
+- **Digest Mode**: Queue notifications during checks, send a single batched email via `headsup notify`
+- **ICS Calendar Attachments**: Date-based subjects with exact dates include `.ics` calendar files for easy import. Updates use `SEQUENCE` to modify existing calendar entries
 - **AI-Assisted Setup**: Intelligent subject identification when adding new items
 - **Cron-Friendly**: Designed for scheduled background execution
 
@@ -222,11 +224,11 @@ Run headsup daily at 9 AM:
 0 9 * * * /usr/local/bin/headsup check --quiet 2>&1 | logger -t headsup
 ```
 
-For digest mode (batch all notifications):
+For digest mode (batch all notifications), set `digest_mode = true` in your config:
 
 ```cron
-# Check throughout the day without sending
-0 9,15,21 * * * /usr/local/bin/headsup check --no-notify --quiet
+# Checks queue notifications automatically when digest_mode = true
+0 9,15,21 * * * /usr/local/bin/headsup check --quiet
 # Send digest once daily
 0 22 * * * /usr/local/bin/headsup notify --digest --quiet
 ```
@@ -267,9 +269,9 @@ For digest mode (batch all notifications):
 
 Located alongside the config file as `state.json`. Contains:
 - Last check timestamps
-- Known release dates/answers
-- Notification history
-- Failure tracking
+- Known release dates/answers (only updated on actual notifications to prevent drift)
+- Notification history and last-notified summaries
+- ICS calendar tracking (UIDs and sequence numbers)
 
 The state file is protected by a lock file to prevent corruption from concurrent runs.
 
@@ -292,11 +294,6 @@ headsup test-email
 Check the history for error details:
 ```bash
 headsup history <subject-key>
-```
-
-Subjects are auto-disabled after 3 consecutive failures. Re-enable with:
-```bash
-headsup subjects enable <subject-key>
 ```
 
 ### View debug output

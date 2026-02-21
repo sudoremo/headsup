@@ -75,17 +75,8 @@ pub enum HeadsupError {
     #[error("Subject key already exists: {0}")]
     SubjectKeyExists(String),
 
-    #[error("Invalid subject key: {0}")]
-    InvalidSubjectKey(String),
-
     #[error("Password command failed: {0}")]
     PasswordCommand(String),
-
-    #[error("URL validation failed: {0}")]
-    InvalidUrl(String),
-
-    #[error("Total run timeout exceeded ({0} seconds)")]
-    TotalTimeout(u64),
 
     #[error("User cancelled operation")]
     UserCancelled,
@@ -106,16 +97,13 @@ impl HeadsupError {
             | HeadsupError::StateLocked
             | HeadsupError::SubjectNotFound(_)
             | HeadsupError::SubjectKeyExists(_)
-            | HeadsupError::InvalidSubjectKey(_)
             | HeadsupError::PasswordCommand(_)
-            | HeadsupError::InvalidUrl(_)
             | HeadsupError::UserCancelled => ExitStatus::GeneralError,
 
             HeadsupError::Email(_) | HeadsupError::SmtpConnection(_) => ExitStatus::EmailDeliveryFailed,
 
             HeadsupError::ClaudeTimeout(_)
-            | HeadsupError::PerplexityTimeout(_)
-            | HeadsupError::TotalTimeout(_) => ExitStatus::Timeout,
+            | HeadsupError::PerplexityTimeout(_) => ExitStatus::Timeout,
 
             HeadsupError::Claude(_)
             | HeadsupError::ClaudeParseError(_)
@@ -125,6 +113,3 @@ impl HeadsupError {
 }
 
 pub type Result<T> = std::result::Result<T, HeadsupError>;
-
-// Alias for migration
-pub type RadarError = HeadsupError;

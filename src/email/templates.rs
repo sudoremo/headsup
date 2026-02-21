@@ -1,14 +1,113 @@
 use crate::claude::{QuestionResponse, RecurringResponse, ReleaseResponse};
 use crate::config::Subject;
-use crate::state::{PendingNotification, QuestionState, RecurringState, ReleaseState};
+use crate::email::ics::{self, IcsEvent};
+use crate::state::{DatePrecision, PendingNotification, QuestionState, RecurringState, ReleaseState};
 
 const SEPARATOR: &str = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 const FOOTER: &str = "This is an automated message from Headsup.";
 
-/// Email content (subject line and body)
+/// Email content (subject line, body, and optional attachments)
 pub struct EmailContent {
     pub subject: String,
     pub body: String,
+    pub attachments: Vec<EmailAttachment>,
+}
+
+/// An email attachment
+pub struct EmailAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+/// Build an ICS attachment for a release subject if the date is exact
+fn build_release_ics_attachment(
+    subject: &Subject,
+    response: &ReleaseResponse,
+    previous_state: Option<&ReleaseState>,
+) -> Option<EmailAttachment> {
+    if response.release_date_precision != DatePrecision::Exact {
+        return None;
+    }
+    let date_str = response.found_release_date.as_ref()?;
+    let date = ics::parse_exact_date(date_str)?;
+
+    let (uid, sequence) = if let Some(state) = previous_state {
+        (
+            state.ics_uid.clone().unwrap_or_else(|| IcsEvent::generate_uid(subject.id)),
+            state.ics_sequence + 1,
+        )
+    } else {
+        (IcsEvent::generate_uid(subject.id), 1)
+    };
+
+    let event = IcsEvent {
+        uid,
+        sequence,
+        summary: format!("{} Release", subject.name),
+        description: response.summary.clone(),
+        date,
+        url: response.source_url.clone(),
+    };
+
+    Some(EmailAttachment {
+        filename: format!("{}.ics", slug(&subject.name)),
+        content_type: "text/calendar; method=PUBLISH".to_string(),
+        data: event.to_ics().into_bytes(),
+    })
+}
+
+/// Build an ICS attachment for a recurring subject if the date is exact
+fn build_recurring_ics_attachment(
+    subject: &Subject,
+    response: &RecurringResponse,
+    previous_state: Option<&RecurringState>,
+) -> Option<EmailAttachment> {
+    if response.date_precision != DatePrecision::Exact {
+        return None;
+    }
+    let date_str = response.next_occurrence_date.as_ref()?;
+    let date = ics::parse_exact_date(date_str)?;
+
+    let (uid, sequence) = if let Some(state) = previous_state {
+        (
+            state.ics_uid.clone().unwrap_or_else(|| IcsEvent::generate_uid(subject.id)),
+            state.ics_sequence + 1,
+        )
+    } else {
+        (IcsEvent::generate_uid(subject.id), 1)
+    };
+
+    let event_name = response
+        .next_occurrence_name
+        .as_ref()
+        .or(subject.event_name.as_ref())
+        .cloned()
+        .unwrap_or_else(|| subject.name.clone());
+
+    let event = IcsEvent {
+        uid,
+        sequence,
+        summary: event_name,
+        description: response.summary.clone(),
+        date,
+        url: response.source_url.clone(),
+    };
+
+    Some(EmailAttachment {
+        filename: format!("{}.ics", slug(&subject.name)),
+        content_type: "text/calendar; method=PUBLISH".to_string(),
+        data: event.to_ics().into_bytes(),
+    })
+}
+
+/// Simple slug helper for filenames
+fn slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 /// Build email content for a release notification
@@ -61,9 +160,14 @@ Confidence: {confidence}
         footer = FOOTER
     );
 
+    let attachments = build_release_ics_attachment(subject, response, previous_state)
+        .into_iter()
+        .collect();
+
     EmailContent {
         subject: email_subject,
         body,
+        attachments,
     }
 }
 
@@ -131,6 +235,7 @@ Confidence: {confidence}
     EmailContent {
         subject: email_subject,
         body,
+        attachments: vec![],
     }
 }
 
@@ -194,9 +299,14 @@ Details:
         footer = FOOTER
     );
 
+    let attachments = build_recurring_ics_attachment(subject, response, previous_state)
+        .into_iter()
+        .collect();
+
     EmailContent {
         subject: email_subject,
         body,
+        attachments,
     }
 }
 
@@ -205,11 +315,11 @@ pub fn build_digest_email(notifications: &[PendingNotification], subjects: &[Sub
     let email_subject = format!("[Headsup] {} Updates", notifications.len());
 
     let mut items = Vec::new();
+    let mut attachments = Vec::new();
+
     for notif in notifications {
-        let subject_name = subjects.iter()
-            .find(|s| s.id == notif.subject_id)
-            .map(|s| s.name.as_str())
-            .unwrap_or("Unknown");
+        let subject = subjects.iter().find(|s| s.id == notif.subject_id);
+        let subject_name = subject.map(|s| s.name.as_str()).unwrap_or("Unknown");
 
         items.push(format!(
             "- {} ({})\n  {}",
@@ -217,6 +327,27 @@ pub fn build_digest_email(notifications: &[PendingNotification], subjects: &[Sub
             notif.event_type,
             notif.summary
         ));
+
+        // Try to generate ICS for applicable notification types
+        if let Some(subj) = subject {
+            match notif.event_type.as_str() {
+                "release_update" => {
+                    if let Ok(response) = serde_json::from_value::<ReleaseResponse>(notif.payload.clone()) {
+                        if let Some(att) = build_release_ics_attachment(subj, &response, None) {
+                            attachments.push(att);
+                        }
+                    }
+                }
+                "recurring_update" => {
+                    if let Ok(response) = serde_json::from_value::<RecurringResponse>(notif.payload.clone()) {
+                        if let Some(att) = build_recurring_ics_attachment(subj, &response, None) {
+                            attachments.push(att);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     let body = format!(
@@ -238,6 +369,7 @@ Headsup - {count} Updates
     EmailContent {
         subject: email_subject,
         body,
+        attachments,
     }
 }
 
@@ -260,6 +392,7 @@ If you're reading this, your email settings are configured properly!
             separator = SEPARATOR,
             footer = FOOTER
         ),
+        attachments: vec![],
     }
 }
 

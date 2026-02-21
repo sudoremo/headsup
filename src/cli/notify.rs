@@ -93,6 +93,7 @@ fn send_individual(config: &Config, notifications: &[PendingNotification]) -> Re
                 notif.summary,
                 notif.source_url.as_deref().unwrap_or("N/A")
             ),
+            attachments: vec![],
         };
 
         email::send_email(&config.email, &content)?;

@@ -355,7 +355,7 @@ impl Config {
 
     /// Validate the entire configuration
     pub fn validate(&self) -> Result<Vec<String>, Vec<String>> {
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
         let mut errors = Vec::new();
 
         // Validate email config

@@ -8,7 +8,7 @@ pub use response::*;
 
 use crate::config::{ClaudeConfig, Subject, SubjectType};
 use crate::error::Result;
-use crate::state::{QuestionState, RecurringState, ReleaseState, SubjectState};
+use crate::state::SubjectState;
 
 /// Check a subject and return the response
 pub async fn check_subject(
